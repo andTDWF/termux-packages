@@ -25,9 +25,16 @@ on:
         type: boolean
         default: false
       arch:
-        description: "可选：只构建一个架构（aarch64 / arm / i686 / x86_64）；留空 = 全部四个"
+        description: "只构建一个架构；all = 全部四个都构建"
         required: false
-        default: ""
+        type: choice
+        default: all
+        options:
+          - all
+          - aarch64
+          - arm
+          - i686
+          - x86_64
 
 permissions: {} # 不授予任何权限
 
@@ -44,8 +51,8 @@ jobs:
     runs-on: ubuntu-26.04
     strategy:
       matrix:
-        # workflow_dispatch 且填了 arch 时只跑那一个；留空或 push/PR 事件仍是全架构。
-        target_arch: ${{ github.event_name == 'workflow_dispatch' && inputs.arch && fromJSON(format('["{0}"]', inputs.arch)) || fromJSON('["aarch64", "arm", "i686", "x86_64"]') }}
+        # workflow_dispatch 且选了具体架构时只跑那一个；all 或 push/PR 事件仍是全架构。
+        target_arch: ${{ github.event_name == 'workflow_dispatch' && inputs.arch != 'all' && fromJSON(format('["{0}"]', inputs.arch)) || fromJSON('["aarch64", "arm", "i686", "x86_64"]') }}
       fail-fast: false
     steps:
     - name: Clone repository
