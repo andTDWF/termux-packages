@@ -24,6 +24,10 @@ on:
         description: "Free space even if not building large package (useful when building a large number of packages)"
         type: boolean
         default: false
+      arch:
+        description: "Optional: build for only this one architecture (aarch64 / arm / i686 / x86_64). Leave empty for all four."
+        required: false
+        default: ""
 
 permissions: {} # none
 
@@ -40,7 +44,8 @@ jobs:
     runs-on: ubuntu-26.04
     strategy:
       matrix:
-        target_arch: [aarch64, arm, i686, x86_64]
+        # workflow_dispatch 且填了 arch 时只跑那一个；留空或 push/PR 事件仍是全架构。
+        target_arch: ${{ github.event_name == 'workflow_dispatch' && inputs.arch && fromJSON(format('["{0}"]', inputs.arch)) || fromJSON('["aarch64", "arm", "i686", "x86_64"]') }}
       fail-fast: false
     steps:
     - name: Clone repository
