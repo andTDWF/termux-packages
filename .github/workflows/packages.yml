@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
     inputs:
       packages:
-        description: "要重建的包名，空格分隔，可填多个"
+        description: "要重建的包名，空格分隔，可填多个；支持通配：* 全部、git* 前缀匹配一批"
         required: true
       free-space:
         description: "即使没挑大包也清出磁盘空间（一次构建很多包时勾上）"
@@ -142,21 +142,45 @@ jobs:
           # 把 MANUAL_INPUT_PACKAGES 的换行压掉，拆成数组
           read -a PACKAGES <<< "${MANUAL_INPUT_PACKAGES//$'\n'/ }"
           for pkg in "${PACKAGES[@]}"; do
-            repo_paths=$(jq --raw-output 'del(.pkg_format) | keys | .[]' repo.json)
-            found=false
-            for repo_path in $repo_paths; do
-              repo=$(jq --raw-output '.["'${repo_path}'"].name' repo.json)
-              if [ -d "${repo_path}/${pkg}" ]; then
-                found=true
-                echo "$pkg" >> ./built_${repo}_packages.txt
-                for subpkg in $(find "${repo_path}/${pkg}/" -maxdepth 1 -type f -name \*.subpackage.sh | sort); do
-                  echo "$(basename "${subpkg%%.subpackage.sh}")" >> ./built_${repo}_subpackages.txt
+            if [[ "$pkg" == *'*'* || "$pkg" == *'?'* ]]; then
+              # 通配（* / ?）：展开匹配的包目录，一次可选中一批（单填 * 就是全部）。
+              # 优先判断：含通配符的条目不再走下面的精确查找。
+              matched=false
+              for repo_path in $(jq --raw-output 'del(.pkg_format) | keys | .[]' repo.json); do
+                repo=$(jq --raw-output '.["'${repo_path}'"].name' repo.json)
+                shopt -s nullglob
+                for dir in "$repo_path"/$pkg/; do
+                  [ -f "$dir/build.sh" ] || continue
+                  matched=true
+                  matched_pkg=$(basename "$dir")
+                  echo "$matched_pkg" >> ./built_${repo}_packages.txt
+                  for subpkg in $(find "$dir" -maxdepth 1 -type f -name \*.subpackage.sh | sort); do
+                    echo "$(basename "${subpkg%%.subpackage.sh}")" >> ./built_${repo}_subpackages.txt
+                  done
                 done
+                shopt -u nullglob
+              done
+              if [ "$matched" != true ]; then
+                echo "No package matched pattern '${pkg}' in any of the repo"
+                exit 1
               fi
-            done
-            if [ "$found" != true ]; then
-              echo "Package '${pkg}' not found in any of the repo"
-              exit 1
+            else
+              repo_paths=$(jq --raw-output 'del(.pkg_format) | keys | .[]' repo.json)
+              found=false
+              for repo_path in $repo_paths; do
+                repo=$(jq --raw-output '.["'${repo_path}'"].name' repo.json)
+                if [ -d "${repo_path}/${pkg}" ]; then
+                  found=true
+                  echo "$pkg" >> ./built_${repo}_packages.txt
+                  for subpkg in $(find "${repo_path}/${pkg}/" -maxdepth 1 -type f -name \*.subpackage.sh | sort); do
+                    echo "$(basename "${subpkg%%.subpackage.sh}")" >> ./built_${repo}_subpackages.txt
+                  done
+                fi
+              done
+              if [ "$found" != true ]; then
+                echo "Package '${pkg}' not found in any of the repo"
+                exit 1
+              fi
             fi
           done
         fi
